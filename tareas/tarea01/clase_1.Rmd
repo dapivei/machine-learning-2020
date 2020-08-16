@@ -1,0 +1,178 @@
+---
+title: "Aprendizaje de Máquina. Tarea 1: Sesgo y varianza"
+output: html_notebook
+---
+*Profesor: Felipe González*
+
+*Elaborado por Daniela Pinto Veizaga*
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(tidymodels)
+library(cowplot)
+```
+
+> 1 . Definición de la función `f_real`:
+
+
+La función real a estimar es una función definida por partes: se comporta como una raíz para $x<10$ y como una constante para $x\geq 10$. Misma que para describir en su totalidad necesita solo 2 puntos.
+
+```{r}
+f_real <- function(x){
+  ifelse(x < 10, 1000*sqrt(x), 1000*sqrt(10))
+}
+
+```
+
+
+```{r}
+
+genera_datos_sin_perturbacion<- function(n = 100){
+  x <- runif(n, 0, 25)
+  y <- f_real(x)
+  tibble(x = x, y = y)
+}
+
+
+```
+
+
+Tibble de puntos que se generan aleatoriamente con la función `f_real`.
+```{r echo=FALSE}
+genera_datos_sin_perturbacion(
+  
+)
+```
+
+Graficando la forma de la función **f_real**:
+
+```{r echo=FALSE, warning=FALSE, fig.align = 'center'}
+ggplot(genera_datos_sin_perturbacion(), aes(x = x, y = y)) + geom_point(width = 0.3, colour = "#7CAE00")  + ggtitle("F real")
+```
+
+
+
+> 2. Generamos datos perturbados con la función **f_real**, agregando rnorm con media cero y desviación estándar 500. El resultado: un normal con media f_real(x) y desviación estándar 500.
+
+
+```{r}
+genera_datos <- function(n = 100){
+  x <- runif(n, 0, 25)
+  y <- f_real(x) + rnorm(n, 0, 500)
+  tibble(x = x, y = y)
+}
+calcular_grafica <- function(mod, nombre = ""){
+  datos_g <- tibble(x = seq(0, 25, 0.01))
+  datos_g <- predict(mod, datos_g) %>% 
+    bind_cols(datos_g)
+  datos_g %>% mutate(nombre = nombre)
+}
+```
+
+
+Graficando la forma de la función **f_real** con los datos perturbados generados.
+
+```{r echo=FALSE, warning=FALSE}
+ggplot(genera_datos(), aes(x = x, y = y)) + geom_point(width = 0.3, colour = "#7CAE00")  + ggtitle("F real con datos perturbados")
+```
+
+
+> 3. Generación de métodos que emplearemos para el ajuste de los datos: regresión lineal, polinomio de grado tres y polinomio de grado ocho.
+
+```{r, message = FALSE, warning=FALSE}
+modelo_lineal <- linear_reg() %>% 
+  set_engine("lm")
+modelo_svm <- svm_poly() %>% 
+  set_engine("kernlab") %>% 
+  set_mode("regression")
+```
+
+Simulamos datos de entrenamiento:
+
+```{r}
+set.seed(8181)
+datos <- genera_datos(30)
+```
+
+
+```{r echo=FALSE}
+datos
+```
+
+> 4. Generamos los objetos de los tres métodos antes mencionados.
+
+```{r, message = FALSE, warning=FALSE}
+# Ajuste
+mod_1 <- modelo_lineal %>% fit(y ~ x, datos)
+mod_2 <- modelo_svm %>% set_args(cost = 0.1, degree = 3) %>% 
+  fit(y ~ x, datos)
+mod_3 <- modelo_svm %>% set_args(cost = 100, degree = 8) %>% 
+  fit(y ~ x, datos)
+```
+
+Ejemplo de la información guardada en cada uno de los objetos generados anteriormente.
+
+```{r}
+mod_1
+```
+> 5. Generamos datos con cada uno de los métodos antes guardados en objetos y graficamos estos datos en una sola gráfica.
+
+```{r, fig.width=7, fig.asp=0.7}
+datos_1 <- calcular_grafica(mod_1, "regresión lineal")
+datos_2 <- calcular_grafica(mod_2, "polinomio de grado 3")
+datos_3 <- calcular_grafica(mod_3, "polinomio de grado 8")
+
+# Unimos las observaciones de los tres modelos en un solo dataframe 
+datos_g <- bind_rows(datos_1, datos_2, datos_3)
+
+ggplot(datos, aes(x = x)) +
+  geom_line(data = datos_g, aes(y = .pred, colour = nombre, group = nombre), size = 1.5) +
+    geom_point(aes(y = y)) 
+```
+
+> 6. Repetimos con distintas muestras de entrenamiento. Describe cómo se comporta cada ajuste: sesgo y varianza.
+
+```{r echo=TRUE, fig.align='center', message=FALSE, warning=FALSE}
+datos_f <- tibble(x = seq(0, 25, 0.01)) %>% 
+  mutate(.pred = f_real(x)) %>% 
+  mutate(nombre = "verdadera f")
+for (i in 0:6){
+  datos_entrena <- genera_datos(100)
+  mod_1 <- modelo_lineal %>% fit(y ~ x, datos_entrena)
+  mod_2 <- modelo_svm %>% set_args(cost = 0.1, degree = 3) %>% 
+    fit(y ~ x, datos_entrena)
+  mod_3 <- modelo_svm %>% set_args(cost = 100, degree = 8) %>% 
+    fit(y ~ x, datos_entrena)
+  datos_1 <- calcular_grafica(mod_1, "regresión lineal")
+  datos_2 <- calcular_grafica(mod_2, "polinomio de grado 3")
+  datos_3 <- calcular_grafica(mod_3, "polinomio de grado ocho")
+  datos_g <- bind_rows(datos_1, datos_2, datos_3, datos_f)
+  Object <- ggplot(datos_entrena, aes(x = x)) +
+    geom_line(data = datos_g, aes(y = .pred, colour = nombre, group = nombre), size = 1.5)  +
+      geom_point(aes(y = y), size = 1.5) +
+    ylim(c(-500, 4500))
+  assign(paste0("plot", i), Object)
+}
+
+```
+
+
+```{r echo=TRUE, fig.height=10, fig.width=15, message=FALSE, warning=FALSE}
+plot_grid(plot1,
+          plot2,
+          plot3,
+          plot4,
+          plot5,
+          plot6,
+          labels = 'AUTO',
+          label_fontfamily = "serif",
+          label_fontface = "plain",
+          label_colour = "blue",
+          ncol = 2)
+```
+
+**Anotaciones: Observaciones en relación al sesgo y la varianza**
+
+Intuitivamente, el modelo polinomial de grado 3 es menos variante ante distintas muestras. Esto se debe a la forma de la $f$ verdadera (como se menciona en el punto 1). Para describir a $f$ se necesitan 3 puntos para conocerla totalmente. Y el polinomio de grado 3 necesita 4 puntos y el polinomio de grado 8 necesita 9 puntos. Por ello, ante cambios grandes en la muestra el polinomio de grado 8 cambia drásticamente. El polinomio de grado 3 mantiene menos variación. El modelo lineal es sensible a _outliers_ por lo que tampoco es adecuado.
+
+Por los argumentos anteriores, dentro de los modelos presentados, el que puede presentar el mejor redimiento es en polinimio cúbico porque los otros dos modelos se sobreajustan (`overfitting`) o  subajustan (`underfitting`)  a los datos generados.
+
